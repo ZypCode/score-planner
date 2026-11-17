@@ -1,6 +1,6 @@
 /* 离线缓存：App 本身已全部内联在 index.html，这里只做一层保险 */
-var CACHE = 'score-planner-v1';
-var ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+var CACHE = 'score-planner-v4';
+var ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './lib/zyp-sync.js'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () { return self.skipWaiting(); }));

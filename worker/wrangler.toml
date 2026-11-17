@@ -1,0 +1,8 @@
+name = "zyp-platform-sync"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "d4f4f39fdb7146d39bbef6b4b0f371e8"
+preview_id = "0a5e1918536c424eaa1eee858e1c8970"

@@ -8,6 +8,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>分数最优推进</title>
 <link rel="manifest" href="manifest.webmanifest">
+<script>var DEFAULT_SYNC_API = 'https://zyp-platform-sync.didazhai.workers.dev';</script>
+<script src="lib/zyp-sync.js"></script>
 <style>
 :root{
   --bg:#0b1220; --card:#141d2f; --card2:#1b2740; --line:#27354f;
@@ -90,12 +92,30 @@ details summary{cursor:pointer;color:var(--dim);font-size:13px;outline:none}
 .hist .h{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:5px 0}
 .hist .h:last-child{border-bottom:0}
 .mono{font-variant-numeric:tabular-nums}
+.session{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px}
+.session.live{border-color:rgba(76,141,255,.55);box-shadow:0 0 0 1px rgba(76,141,255,.25) inset}
+.session .title{font-size:14px;font-weight:600;margin:0 0 4px}
+.session .meta{font-size:12px;color:var(--dim);line-height:1.55}
+.session .row{margin-top:9px}
+.arc{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--card2)}
+.arc:last-child{margin-bottom:0}
+.arc .head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;cursor:pointer}
+.arc .head .name{font-size:13.5px;font-weight:600}
+.arc .head .when{font-size:11.5px;color:var(--dim2);text-align:right;white-space:nowrap}
+.arc .sum{font-size:12px;color:var(--dim);margin-top:5px}
+.arc .body{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:12.5px;color:var(--dim)}
+.qrbox{margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.qrbox img{width:132px;height:132px;border-radius:10px;background:#fff;padding:6px}
+.cloud-ok{color:var(--ok);font-size:12px}
+.cloud-warn{color:var(--warn);font-size:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>分数最优推进</h1>
   <div class="sub">依次通关 · 一波分数全部用完 · 总溢出最小</div>
+
+  <div id="sessionBox" class="session"></div>
 
   <!-- 当前状态 -->
   <div class="card">
@@ -124,7 +144,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:13px;outline:none}
       <div class="row" style="margin-top:9px">
         <button class="sm pri" id="btnApplyStart">应用起点</button>
       </div>
-      <div class="hint">用于中途接手：直接跳到第 N 关，并带上该关已有的分数。应用后会清空「累计溢出」与历史记录，从该起点重新统计。</div>
+      <div class="hint" id="startHint">用于中途接手：直接跳到第 N 关，并带上该关已有的分数。应用后会清空本局波次与累计溢出（仅在对局进行中）。</div>
     </details>
 
     <div class="row" style="margin-top:10px">
@@ -166,11 +186,43 @@ details summary{cursor:pointer;color:var(--dim);font-size:13px;outline:none}
     <div class="hint">目标分按关卡顺序依次递增填写。点「批量粘贴」可一次贴入，用空格 / 逗号 / 换行分隔。</div>
   </div>
 
-  <!-- 历史 -->
+  <!-- 本局波次 -->
   <div class="card">
-    <details>
-      <summary>历史记录（<span id="histN">0</span> 波）</summary>
+    <details open id="waveHistDetails">
+      <summary>本局波次（<span id="histN">0</span> 波）</summary>
       <div class="hist" id="histBox" style="margin-top:8px"></div>
+    </details>
+  </div>
+
+  <!-- 云同步 -->
+  <div class="card">
+    <details id="cloudDetails">
+      <summary>云同步（Cloudflare · 多设备续玩）</summary>
+      <p class="hint" style="margin-top:8px;margin-bottom:8px">部署平台 Worker 后填入 API 地址并<strong>注册或登录</strong>。任意设备用同一账号即可自动拉回/上传进度，无需扫码、无需浏览器配置同步。</p>
+      <label class="f">API 根地址</label>
+      <input type="url" id="inCloudApi" placeholder="https://zyp-platform-sync.xxx.workers.dev" autocomplete="off">
+      <div class="row" style="margin-top:8px">
+        <button type="button" class="sm" id="btnCloudSave">保存并检测</button>
+        <span id="cloudStatus"></span>
+      </div>
+      <label class="f" style="margin-top:12px">用户名</label>
+      <input type="text" id="inCloudUser" placeholder="小写字母、数字、下划线，3–32 位" autocomplete="username" autocapitalize="off">
+      <label class="f">密码（至少 8 位）</label>
+      <input type="password" id="inCloudPass" placeholder="密码" autocomplete="current-password">
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px">
+        <button type="button" class="sm pri" id="btnCloudLogin">登录</button>
+        <button type="button" class="sm" id="btnCloudRegister">注册</button>
+        <button type="button" class="sm" id="btnCloudLogout">退出</button>
+      </div>
+      <p class="meta" id="cloudAuthLine" style="margin-top:8px"></p>
+    </details>
+  </div>
+
+  <!-- 对局归档 -->
+  <div class="card">
+    <details id="archiveDetails">
+      <summary>对局归档（<span id="arcN">0</span> 场）</summary>
+      <div id="arcBox" style="margin-top:8px"></div>
     </details>
   </div>
 </div>
@@ -376,7 +428,12 @@ var ScoreSolver = (function () {
 /* ============================ App ============================ */
 (function () {
   'use strict';
-  var LS = 'score-planner-v1';
+  var LS = 'score-planner-v2';
+  var LS_V1 = 'score-planner-v1';
+  var SYNC_PROJECT_ID = 'score-planner';
+  var cloudPushTimer = null;
+  var cloudSyncing = false;
+  var cloudRemoteAt = 0;
 
   /* 内置关卡场景预设（依次通关的目标分） */
   var PRESETS = [
@@ -386,18 +443,171 @@ var ScoreSolver = (function () {
   ];
 
   var DEFAULTS = { targets: PRESETS[0].targets.slice(), level: 0, carry: 0, totalOverflow: 0, history: [], wave: [] };
-  var S = load();
+  var store = loadStore();
+  var S = workingState();
   var lastResult = null;
 
   function $(id) { return document.getElementById(id); }
-  function load() {
+  function snapState(src) {
+    return {
+      targets: src.targets.slice(),
+      level: src.level | 0,
+      carry: Number(src.carry) || 0,
+      totalOverflow: Number(src.totalOverflow) || 0,
+      history: (src.history || []).slice(),
+      wave: (src.wave || []).slice()
+    };
+  }
+  function scenarioLabel(targets) {
+    var p = PRESETS.filter(function (x) { return sameTargets(targets, x.targets); })[0];
+    return p ? p.name : '自定义 · ' + targets.length + ' 关';
+  }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function loadStore() {
     try {
       var raw = localStorage.getItem(LS);
-      if (raw) { var o = JSON.parse(raw); if (o && o.targets && o.targets.length) return o; }
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && Array.isArray(o.archives)) {
+          if (!o.draft || !o.draft.targets || !o.draft.targets.length) o.draft = JSON.parse(JSON.stringify(DEFAULTS));
+          return {
+            draft: o.draft,
+            active: o.active || null,
+            archives: o.archives
+          };
+        }
+      }
     } catch (e) {}
-    return JSON.parse(JSON.stringify(DEFAULTS));
+    try {
+      var v1 = localStorage.getItem(LS_V1);
+      if (v1) {
+        var old = JSON.parse(v1);
+        if (old && old.targets && old.targets.length) {
+          return { draft: old, active: null, archives: [] };
+        }
+      }
+    } catch (e2) {}
+    return { draft: JSON.parse(JSON.stringify(DEFAULTS)), active: null, archives: [] };
   }
-  function save() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
+  function packStoreForCloud() {
+    return { draft: store.draft, active: store.active, archives: store.archives };
+  }
+  function applyRemoteStore(remote) {
+    if (!remote || typeof remote !== 'object') return;
+    if (!remote.draft || !remote.draft.targets || !remote.draft.targets.length) {
+      remote.draft = JSON.parse(JSON.stringify(DEFAULTS));
+    }
+    if (!Array.isArray(remote.archives)) remote.archives = [];
+    store.draft = remote.draft;
+    store.active = remote.active || null;
+    store.archives = remote.archives;
+  }
+  function scheduleCloudPush() {
+    if (!ZypSync.isLoggedIn()) return;
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = setTimeout(function () {
+      syncFromS();
+      ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud()).catch(function () {});
+    }, 450);
+  }
+  function cloudPushNow() {
+    if (!ZypSync.isLoggedIn()) return Promise.resolve();
+    syncFromS();
+    return ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud());
+  }
+  function workingState() {
+    if (store.active && store.active.state) return Object.assign(store.active.state, {
+      targets: store.active.state.targets.slice(),
+      history: (store.active.state.history || []).slice(),
+      wave: (store.active.state.wave || []).slice()
+    });
+    return Object.assign(store.draft, {
+      targets: store.draft.targets.slice(),
+      history: (store.draft.history || []).slice(),
+      wave: (store.draft.wave || []).slice()
+    });
+  }
+  function syncFromS() {
+    if (store.active) store.active.state = snapState(S);
+    else store.draft = snapState(S);
+  }
+  function save() {
+    syncFromS();
+    try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    scheduleCloudPush();
+  }
+  function hasActive() { return !!(store.active && store.active.state); }
+
+  function startSession() {
+    if (hasActive()) { alert('当前已有进行中的对局，请先结束并归档。'); return; }
+    if (!S.targets.length) { alert('请先设置关卡目标分'); return; }
+    var st = snapState(S);
+    var now = new Date().toISOString();
+    store.active = {
+      id: 'run_' + Date.now(),
+      title: scenarioLabel(st.targets),
+      startedAt: now,
+      scenario: scenarioLabel(st.targets),
+      state: {
+        targets: st.targets.slice(),
+        level: st.level | 0,
+        carry: Number(st.carry) || 0,
+        totalOverflow: 0,
+        history: [],
+        wave: []
+      }
+    };
+    S = workingState();
+    lastResult = null;
+    clearResult();
+    save();
+    render();
+  }
+
+  function endSession() {
+    if (!hasActive()) return;
+    if (S.wave && S.wave.length && !confirm('本波还有未计算的分数，确定结束对局？')) return;
+    if (!confirm('结束并归档本场对局？进度将保存到「对局归档」，之后可新开一局。')) return;
+    syncFromS();
+    var a = store.active;
+    var st = a.state;
+    var n = st.targets.length;
+    var done = (st.level | 0) >= n;
+    store.archives.unshift({
+      id: a.id,
+      title: a.title,
+      scenario: a.scenario,
+      startedAt: a.startedAt,
+      endedAt: new Date().toISOString(),
+      targets: st.targets.slice(),
+      level: st.level | 0,
+      carry: Number(st.carry) || 0,
+      totalOverflow: Number(st.totalOverflow) || 0,
+      waves: (st.history || []).slice(),
+      finished: done
+    });
+    if (store.archives.length > 80) store.archives.length = 80;
+    store.active = null;
+    store.draft.targets = st.targets.slice();
+    store.draft.level = 0;
+    store.draft.carry = 0;
+    store.draft.totalOverflow = 0;
+    store.draft.history = [];
+    store.draft.wave = [];
+    S = workingState();
+    lastResult = null;
+    clearResult();
+    syncFromS();
+    save();
+    cloudPushNow().finally(function () { render(); });
+    $('archiveDetails').open = true;
+  }
   function fmt(x) { return (Math.round(x * 1000) / 1000).toString(); }
   function clearResult() { lastResult = null; $('resultBox').innerHTML = ''; $('btnApply').disabled = true; }
 
@@ -430,8 +640,9 @@ var ScoreSolver = (function () {
   }
   function usePreset(p) {
     if (sameTargets(S.targets, p.targets)) return;
+    var busy = hasActive() ? '（对局进行中，波次记录会清空）' : '';
     if ((S.level > 0 || S.carry > 0 || S.history.length) &&
-        !confirm('切换到「' + p.name + '」会把关卡表替换成该场景，并重置当前进度，继续？')) return;
+        !confirm('切换到「' + p.name + '」会把关卡表替换成该场景，并重置当前进度' + busy + '，继续？')) return;
     S.targets = p.targets.slice();
     S.level = 0; S.carry = 0; S.totalOverflow = 0; S.history = [];
     clearResult(); save(); render();
@@ -445,8 +656,73 @@ var ScoreSolver = (function () {
     if (document.activeElement !== cEl) cEl.value = S.carry;
   }
 
+  function renderSession() {
+    var box = $('sessionBox');
+    if (hasActive()) {
+      var a = store.active;
+      var st = a.state;
+      var prog = '第 ' + Math.min(st.level + 1, st.targets.length) + ' / ' + st.targets.length + ' 关 · 本局 ' + (st.history.length || 0) + ' 波 · 溢出 ' + fmt(st.totalOverflow);
+      box.className = 'session live';
+      var cloudHtml = ZypSync.isLoggedIn()
+        ? '<p class="meta" style="margin-top:6px">☁ 已登录 · ' + (ZypSync.getUsername() || '云端') + ' · 自动同步</p>'
+        : '';
+      box.innerHTML =
+        '<p class="title">对局进行中 · ' + a.title + '</p>' +
+        '<p class="meta">开始 ' + fmtTime(a.startedAt) + '<br>' + prog + '</p>' +
+        cloudHtml +
+        '<div class="row">' +
+        '<button type="button" class="sm" id="btnEndSession">结束并归档</button>' +
+        '</div>';
+      $('btnEndSession').onclick = endSession;
+    } else {
+      box.className = 'session';
+      box.innerHTML =
+        '<p class="title">未开始对局</p>' +
+        '<p class="meta">在下方「关卡设置」里选好场景或目标分，必要时设置起始进度，再点击开始对局。进行中会自动保存，下次打开可继续。</p>' +
+        '<div class="row">' +
+        '<button type="button" class="sm pri" id="btnStartSession">开始对局</button>' +
+        '</div>';
+      $('btnStartSession').onclick = startSession;
+    }
+  }
+
+  function renderArchives() {
+    $('arcN').textContent = store.archives.length;
+    var box = $('arcBox');
+    if (!store.archives.length) {
+      box.innerHTML = '<div style="color:var(--dim2);font-size:13px">暂无归档。结束对局后会出现在这里。</div>';
+      return;
+    }
+    box.innerHTML = store.archives.map(function (a, idx) {
+      var n = a.targets.length;
+      var status = a.finished ? '已通关' : ('停在第 ' + Math.min(a.level + 1, n) + ' 关');
+      var waves = a.waves && a.waves.length
+        ? a.waves.map(function (h) {
+            return '<div class="h"><span>第 ' + h.waveNo + ' 波 · 通关 ' + h.cleared + ' 关</span><span class="mono">溢出 ' + fmt(h.overflow) + '</span></div>';
+          }).join('')
+        : '<div style="color:var(--dim2)">本局没有已应用的波次</div>';
+      return '<div class="arc" data-i="' + idx + '">' +
+        '<div class="head" data-toggle="' + idx + '">' +
+        '<span class="name">' + a.title + ' · ' + status + '</span>' +
+        '<span class="when">' + fmtTime(a.startedAt) + '<br>→ ' + fmtTime(a.endedAt) + '</span>' +
+        '</div>' +
+        '<div class="sum">共 ' + (a.waves ? a.waves.length : 0) + ' 波 · 累计溢出 <span class="mono">' + fmt(a.totalOverflow) + '</span></div>' +
+        '<div class="body" id="arcBody' + idx + '" style="display:none">' + waves + '</div>' +
+        '</div>';
+    }).join('');
+    box.querySelectorAll('[data-toggle]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var i = el.getAttribute('data-toggle');
+        var body = $('arcBody' + i);
+        if (!body) return;
+        body.style.display = body.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+  }
+
   /* ---------- 渲染 ---------- */
   function render() {
+    renderSession();
     var t = S.targets, n = t.length, lv = Math.min(S.level, n);
     var done = lv >= n;
     var target = done ? null : t[lv];
@@ -489,6 +765,7 @@ var ScoreSolver = (function () {
       return '<div class="h"><span>第 ' + (h.waveNo) + ' 波 · 通关 ' + h.cleared + ' 关</span>' +
              '<span class="mono">溢出 ' + fmt(h.overflow) + '</span></div>';
     }).join('');
+    renderArchives();
   }
 
   function renderWave() {
@@ -548,7 +825,8 @@ var ScoreSolver = (function () {
   });
 
   $('btnReset').addEventListener('click', function () {
-    if (!confirm('重置进度？关卡目标分保留，进度回到第 1 关 0 分，溢出 / 历史清空。')) return;
+    var extra = hasActive() ? '（不会结束对局，仅清空本局推进）' : '';
+    if (!confirm('重置进度？关卡目标分保留，进度回到第 1 关 0 分，溢出 / 波次清空。' + extra)) return;
     S.level = 0; S.carry = 0; S.totalOverflow = 0; S.history = []; S.wave = [];
     clearResult(); save(); render();
   });
@@ -646,7 +924,140 @@ var ScoreSolver = (function () {
 
   function ovCls(v) { return v <= 0 ? '0' : (v <= 20 ? '1' : '2'); }
 
-  render();
+  function refreshCloudAuthLine() {
+    var el = $('cloudAuthLine');
+    if (!el) return;
+    if (!ZypSync.enabled()) {
+      el.textContent = '未配置 API，仅使用本机存档。';
+      return;
+    }
+    if (ZypSync.isLoggedIn()) {
+      el.textContent = '当前账号：' + (ZypSync.getUsername() || '（已登录）');
+    } else {
+      el.textContent = '已配置 API，请登录或注册后启用云端同步。';
+    }
+  }
+
+  function pullCloudAndMerge() {
+    return ZypSync.pull(SYNC_PROJECT_ID).then(function (res) {
+      if (res && res.data) {
+        applyRemoteStore(res.data);
+        S = workingState();
+        try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+        render();
+      }
+      return res;
+    });
+  }
+
+  function initCloudUi() {
+    var inp = $('inCloudApi');
+    if (inp) inp.value = ZypSync.apiBase();
+    var uInp = $('inCloudUser');
+    if (ZypSync.getUsername() && uInp) uInp.value = ZypSync.getUsername();
+    refreshCloudAuthLine();
+
+    function setCloudMsg(text, ok) {
+      $('cloudStatus').textContent = text;
+      $('cloudStatus').className = ok ? 'cloud-ok' : (ok === false ? 'cloud-warn' : '');
+    }
+
+    $('btnCloudSave').addEventListener('click', function () {
+      var url = (inp.value || '').trim().replace(/\/+$/, '');
+      if (!url) {
+        ZypSync.setApi('');
+        setCloudMsg('已关闭云同步', null);
+        refreshCloudAuthLine();
+        return;
+      }
+      ZypSync.setApi(url);
+      setCloudMsg('检测中…', null);
+      ZypSync.health().then(function () {
+        setCloudMsg('API 已连接', true);
+        refreshCloudAuthLine();
+      }).catch(function (e) {
+        setCloudMsg('连接失败：' + (e.message || e), false);
+      });
+    });
+
+    function creds() {
+      return {
+        user: (uInp && uInp.value || '').trim().toLowerCase(),
+        pass: ($('inCloudPass') && $('inCloudPass').value) || ''
+      };
+    }
+
+    $('btnCloudLogin').addEventListener('click', function () {
+      var c = creds();
+      if (!ZypSync.enabled()) { alert('请先保存 API 地址'); return; }
+      if (!c.user || !c.pass) { alert('请填写用户名和密码'); return; }
+      setCloudMsg('登录中…', null);
+      ZypSync.login(c.user, c.pass)
+        .then(function () {
+          setCloudMsg('登录成功', true);
+          refreshCloudAuthLine();
+          return pullCloudAndMerge();
+        })
+        .catch(function (e) {
+          setCloudMsg('登录失败：' + (e.message || e), false);
+        });
+    });
+
+    $('btnCloudRegister').addEventListener('click', function () {
+      var c = creds();
+      if (!ZypSync.enabled()) { alert('请先保存 API 地址'); return; }
+      if (!c.user || !c.pass) { alert('请填写用户名和密码'); return; }
+      if (c.pass.length < 8) { alert('密码至少 8 位'); return; }
+      setCloudMsg('注册中…', null);
+      ZypSync.register(c.user, c.pass)
+        .then(function () {
+          setCloudMsg('注册成功', true);
+          refreshCloudAuthLine();
+          return pullCloudAndMerge();
+        })
+        .catch(function (e) {
+          setCloudMsg('注册失败：' + (e.message || e), false);
+        });
+    });
+
+    $('btnCloudLogout').addEventListener('click', function () {
+      ZypSync.logout();
+      setCloudMsg('已退出', null);
+      refreshCloudAuthLine();
+      render();
+    });
+  }
+
+  function boot() {
+    initCloudUi();
+
+    if (ZypSync.isLoggedIn()) {
+      cloudSyncing = true;
+      var box = $('sessionBox');
+      box.className = 'session';
+      box.innerHTML = '<p class="meta">正在同步云端存档…</p>';
+      ZypSync.pull(SYNC_PROJECT_ID)
+        .then(function (res) {
+          if (res && res.data) {
+            cloudRemoteAt = res.updatedAt || 0;
+            applyRemoteStore(res.data);
+          }
+          S = workingState();
+          try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+          cloudSyncing = false;
+          render();
+        })
+        .catch(function (e) {
+          cloudSyncing = false;
+          console.warn('sync pull', e);
+          render();
+        });
+      return;
+    }
+    render();
+  }
+
+  boot();
 
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
     navigator.serviceWorker.register('sw.js').catch(function () {});

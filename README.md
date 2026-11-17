@@ -78,6 +78,10 @@ node serve.js
 
 数据存在浏览器 localStorage 里，关掉再打开还在。
 
+**对局**：在「关卡设置」完成后点「开始对局」，本局进度自动保存；点「结束并归档」写入「对局归档」，可随时展开查看每波溢出。
+
+**云同步（Cloudflare 平台 Worker）**：见 [`worker/README.md`](worker/README.md) 与 [`lib/zyp-sync.js`](lib/zyp-sync.js)。部署后配置 API 并**注册/登录**，多设备用同一账号续玩；其它子项目可复用同一 Worker 与 `zyp-sync.js`，仅 `projectId` 不同。
+
 ## 算法
 
 **精确解（本波分数 ≤ 18 个）**：位掩码 DP。
