@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>分数最优推进</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{
+  --bg:#0b1220; --card:#141d2f; --card2:#1b2740; --line:#27354f;
+  --fg:#e8eefc; --dim:#93a3c0; --dim2:#6d7f9e;
+  --accent:#4c8dff; --accent2:#2f6fe0; --ok:#31c48d; --warn:#f5a524; --bad:#f2555a;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  padding:0 0 env(safe-area-inset-bottom) 0;
+}
+.wrap{max-width:640px;margin:0 auto;padding:14px 12px 96px}
+h1{font-size:19px;margin:6px 0 2px;letter-spacing:.5px}
+.sub{color:var(--dim);font-size:12.5px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--fg);display:flex;align-items:center;gap:8px}
+.card h2 .tag{font-size:11px;font-weight:400;color:var(--dim2);background:var(--card2);padding:1px 7px;border-radius:20px;border:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+label.f{display:block;font-size:12px;color:var(--dim);margin:0 0 5px}
+input[type=number],input[type=text],textarea{
+  width:100%;background:var(--card2);border:1px solid var(--line);color:var(--fg);
+  border-radius:10px;padding:11px 12px;font-size:16px;font-family:inherit;outline:none;
+}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:64px;line-height:1.6}
+button{
+  font-family:inherit;font-size:14px;border-radius:10px;border:1px solid var(--line);
+  background:var(--card2);color:var(--fg);padding:11px 14px;cursor:pointer;
+}
+button:active{transform:scale(.98)}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.pri:active{background:var(--accent2)}
+button.ghost{background:transparent}
+button.sm{padding:7px 11px;font-size:13px;border-radius:9px}
+button:disabled{opacity:.45}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.lv{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:7px 8px}
+.lv .n{font-size:11px;color:var(--dim2);margin-bottom:3px}
+.lv input{padding:6px 8px;font-size:15px;text-align:center;border-radius:7px}
+.lv.done{opacity:.45}
+.lv.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;min-height:8px}
+.chip{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:15px;font-variant-numeric:tabular-nums}
+.chip b{color:var(--accent);font-weight:600}
+.chip .x{color:var(--dim2);margin-left:7px;font-size:16px;cursor:pointer}
+.chip.clickable{cursor:pointer}
+.presets{display:flex;flex-wrap:wrap;gap:7px}
+.pbtn{background:var(--card2);border:1px solid var(--line);color:var(--fg);border-radius:9px;
+  padding:8px 12px;font-size:13.5px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center}
+.pbtn .c{color:var(--dim2);font-size:11.5px;margin-left:6px}
+.pbtn.on{background:rgba(76,141,255,.16);border-color:var(--accent);color:#cfe0ff;font-weight:600}
+.pbtn.on .c{color:#8fb4f0}
+span.pbtn{cursor:default}
+.stat{display:flex;gap:10px;flex-wrap:wrap}
+.stat .s{flex:1;min-width:90px;background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.stat .s .k{font-size:11.5px;color:var(--dim2)}
+.stat .s .v{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums;margin-top:2px}
+.plan{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-top:10px}
+.plan .pr{display:flex;gap:10px;align-items:baseline;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--card2)}
+.plan .pr:last-child{border-bottom:0}
+.plan .pr .l{font-size:12.5px;color:var(--dim);min-width:74px}
+.plan .pr .e{flex:1;font-size:14.5px;font-variant-numeric:tabular-nums;word-break:break-all}
+.plan .pr .o{font-size:12.5px;white-space:nowrap}
+.o0{color:var(--ok)} .o1{color:var(--warn)} .o2{color:var(--bad)}
+.hint{font-size:12.5px;color:var(--dim);margin-top:9px;line-height:1.6}
+.warnbox{background:rgba(245,165,36,.12);border:1px solid rgba(245,165,36,.45);color:#ffd894;
+  border-radius:11px;padding:10px 12px;font-size:13px;margin-top:10px}
+.okbox{background:rgba(49,196,141,.12);border:1px solid rgba(49,196,141,.45);color:#9ff0d0;
+  border-radius:11px;padding:10px 12px;font-size:13px;margin-top:10px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(11,18,32,.94);backdrop-filter:blur(10px);
+  border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));z-index:20}
+.bar .in{max-width:640px;margin:0 auto;display:flex;gap:9px}
+.bar .in button{flex:1}
+details summary{cursor:pointer;color:var(--dim);font-size:13px;outline:none}
+.hist{font-size:13px;color:var(--dim);line-height:1.9}
+.hist .h{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:5px 0}
+.hist .h:last-child{border-bottom:0}
+.mono{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>分数最优推进</h1>
+  <div class="sub">依次通关 · 一波分数全部用完 · 总溢出最小</div>
+
+  <!-- 当前状态 -->
+  <div class="card">
+    <h2>当前状态 <span class="tag" id="lvTag">—</span></h2>
+    <div class="stat">
+      <div class="s"><div class="k">当前关卡</div><div class="v mono" id="stLv">1</div></div>
+      <div class="s"><div class="k">该关目标</div><div class="v mono" id="stTarget">—</div></div>
+      <div class="s"><div class="k">已累计</div><div class="v mono" id="stCarry">0</div></div>
+      <div class="s"><div class="k">还差</div><div class="v mono" id="stNeed">—</div></div>
+      <div class="s"><div class="k">累计溢出</div><div class="v mono" id="stOv">0</div></div>
+    </div>
+    <div class="hint" id="stHint"></div>
+
+    <details style="margin-top:10px">
+      <summary>调整起始进度（中途接手：从第几关开始 / 该关已完成多少分）</summary>
+      <div class="row" style="margin-top:9px;align-items:flex-end">
+        <div class="grow">
+          <label class="f">从第几关开始</label>
+          <input id="inStartLv" type="number" inputmode="numeric" min="1" value="1">
+        </div>
+        <div class="grow">
+          <label class="f">该关已完成分数</label>
+          <input id="inStartCarry" type="number" inputmode="decimal" min="0" value="0">
+        </div>
+      </div>
+      <div class="row" style="margin-top:9px">
+        <button class="sm pri" id="btnApplyStart">应用起点</button>
+      </div>
+      <div class="hint">用于中途接手：直接跳到第 N 关，并带上该关已有的分数。应用后会清空「累计溢出」与历史记录，从该起点重新统计。</div>
+    </details>
+
+    <div class="row" style="margin-top:10px">
+      <button class="sm ghost" id="btnUndo">撤销上一波</button>
+      <button class="sm ghost" id="btnReset">重置进度</button>
+    </div>
+  </div>
+
+  <!-- 本波分数 -->
+  <div class="card">
+    <h2>本波分数 <span class="tag" id="waveTag">0 个</span></h2>
+    <div class="row">
+      <input class="grow" id="waveInput" type="text" inputmode="decimal"
+             placeholder="输入一个分数后回车，可批量粘贴：12 30 8 55">
+      <button class="sm" id="btnAddWave">加入</button>
+    </div>
+    <div class="chips" id="waveChips"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="sm ghost" id="btnClearWave">清空本波</button>
+      <button class="sm ghost" id="btnDemoWave">填示例</button>
+    </div>
+  </div>
+
+  <!-- 结果 -->
+  <div id="resultBox"></div>
+
+  <!-- 关卡设置 -->
+  <div class="card">
+    <h2>关卡设置 <span class="tag" id="lvCount">12 关</span></h2>
+    <label class="f">关卡场景</label>
+    <div class="presets" id="presetRow" style="margin-bottom:12px"></div>
+    <div class="row" style="margin-bottom:10px">
+      <label class="f" style="margin:0">关卡数</label>
+      <input id="lvNum" type="number" inputmode="numeric" min="1" max="30" value="12" style="width:84px;text-align:center">
+      <button class="sm" id="btnApplyNum">应用</button>
+      <button class="sm ghost" id="btnPasteLv">批量粘贴</button>
+    </div>
+    <div class="grid" id="lvGrid"></div>
+    <div class="hint">目标分按关卡顺序依次递增填写。点「批量粘贴」可一次贴入，用空格 / 逗号 / 换行分隔。</div>
+  </div>
+
+  <!-- 历史 -->
+  <div class="card">
+    <details>
+      <summary>历史记录（<span id="histN">0</span> 波）</summary>
+      <div class="hist" id="histBox" style="margin-top:8px"></div>
+    </details>
+  </div>
+</div>
+
+<div class="bar"><div class="in">
+  <button class="pri" id="btnSolve">计算最优方案</button>
+  <button id="btnApply" disabled>应用方案</button>
+</div></div>
+
+<script>
+/*<SOLVER_START>*/
+var ScoreSolver = (function () {
+  'use strict';
+
+  var MAX_K = 18;      // 位掩码 DP 上限（2^18 = 26 万状态）
+  var MAX_CAP = 300000; // 子集和 DP 的容量上限
+
+  function preClear(targets, li, c) {
+    var ov = 0;
+    while (li < targets.length && c >= targets[li]) { ov += c - targets[li]; c = 0; li++; }
+    return { li: li, c: c, ov: ov };
+  }
+
+  /**
+   * 求解一波分数的最优分配。
+   * @param {number[]} targets   每关目标分（按顺序通关）
+   * @param {number}   startLevel 当前关卡下标（0 基）
+   * @param {number}   carryIn    当前关卡已累计的分数
+   * @param {number[]} wave       本波获得的分数（必须全部用完）
+   */
+  function solveWave(targets, startLevel, carryIn, wave) {
+    var n = targets.length;
+    var items = [];
+    for (var i = 0; i < (wave || []).length; i++) {
+      var v = Number(wave[i]);
+      if (isFinite(v) && v > 0) items.push(v);
+    }
+    var pre = preClear(targets, Math.max(0, Math.min(startLevel | 0, n)), Number(carryIn) || 0);
+    var li = pre.li, carry = pre.c;
+
+    var res = {
+      startLevel: Math.max(0, Math.min(startLevel | 0, n)),
+      endLevel: li,
+      groups: [],
+      overflow: pre.ov,
+      carryAfter: carry,
+      pending: [],
+      wasted: 0,
+      exact: true,
+      itemCount: items.length
+    };
+
+    if (li >= n) {
+      var w = 0;
+      for (var t = 0; t < items.length; t++) w += items[t];
+      res.wasted = w + carry;
+      res.overflow += w + carry;
+      res.carryAfter = 0;
+      res.pending = [];
+      return res;
+    }
+    if (items.length === 0) return res;
+
+    if (items.length <= MAX_K) {
+      var order = dpOrder(targets, li, carry, items);
+      simulate(items, order, targets, li, carry, res);
+    } else {
+      res.exact = false;
+      greedyAssign(items, targets, li, carry, res);
+    }
+    return res;
+  }
+
+  /* ---------- 精确解：位掩码 DP ----------
+   * 状态 dp[mask] = 用完 mask 里这些分数后，(已通关数 j, 累计溢出 ov) 的最优值。
+   * 当前关已累计量 acc 可由 mask/j/ov 唯一推出：acc = carry + sum(mask) - 前 j 关目标之和 - ov
+   * 每加入一个分数就放到"当前关"，一旦 acc >= 目标即通关，超出部分计为溢出。
+   * 由于分数可以任意顺序投入，DP 覆盖了所有「哪几个分数给哪一关」的划分。
+   */
+  function dpOrder(targets, li, carry, items) {
+    var n = targets.length, k = items.length, size = 1 << k;
+    var sum = new Float64Array(size);
+    for (var m = 1; m < size; m++) {
+      var b = m & (-m);
+      sum[m] = sum[m ^ b] + items[31 - Math.clz32(b)];
+    }
+    var maxJ = n - li;
+    var pref = new Float64Array(maxJ + 1);
+    for (var p = 0; p < maxJ; p++) pref[p + 1] = pref[p] + targets[li + p];
+
+    var dpJ = new Int8Array(size).fill(-1);
+    var dpOv = new Float64Array(size);
+    var par = new Int32Array(size).fill(-1);
+    dpJ[0] = 0; dpOv[0] = 0;
+
+    for (var m2 = 0; m2 < size; m2++) {
+      var j = dpJ[m2];
+      if (j < 0) continue;
+      var ov = dpOv[m2];
+      var acc = carry + sum[m2] - pref[j] - ov;
+      for (var i = 0; i < k; i++) {
+        var bit = 1 << i;
+        if (m2 & bit) continue;
+        var nm = m2 | bit;
+        var nacc = acc + items[i];
+        var nj = j, nov = ov;
+        if (j < maxJ && nacc >= targets[li + j]) { nov = ov + nacc - targets[li + j]; nj = j + 1; }
+        var cj = dpJ[nm];
+        if (cj < nj || (cj === nj && dpOv[nm] > nov)) { dpJ[nm] = nj; dpOv[nm] = nov; par[nm] = i; }
+      }
+    }
+    var ord = [], mm = size - 1;
+    while (mm > 0) { var pi = par[mm]; ord.push(pi); mm ^= (1 << pi); }
+    ord.reverse();
+    return ord;
+  }
+
+  function simulate(items, order, targets, li, carry, res) {
+    var n = targets.length, cur = carry, lv = li, buf = [];
+    for (var q = 0; q < order.length; q++) {
+      var v = items[order[q]];
+      if (lv >= n) { res.overflow += v; res.wasted += v; continue; }
+      cur += v; buf.push(v);
+      if (cur >= targets[lv]) {
+        res.overflow += cur - targets[lv];
+        res.groups.push({ level: lv, target: targets[lv], items: buf.slice(), sum: cur, overflow: cur - targets[lv] });
+        cur = 0; buf = []; lv++;
+      }
+    }
+    res.endLevel = lv;
+    res.carryAfter = cur;
+    res.pending = buf;
+  }
+
+  /* ---------- 大规模回退：逐关做最小覆盖 ---------- */
+  function greedyAssign(items, targets, li, carry, res) {
+    var n = targets.length;
+    var used = new Array(items.length);
+    for (var z = 0; z < used.length; z++) used[z] = false;
+    var cur = carry, lv = li, buf = [];
+    while (lv < n) {
+      var need = targets[lv] - cur;
+      if (need <= 0) {
+        res.overflow += cur - targets[lv];
+        res.groups.push({ level: lv, target: targets[lv], items: buf.slice(), sum: cur, overflow: cur - targets[lv] });
+        cur = 0; buf = []; lv++; continue;
+      }
+      var pick = minCover(items, used, need);
+      if (!pick) break;
+      var vals = [], s = cur;
+      for (var t = 0; t < pick.length; t++) { used[pick[t]] = true; vals.push(items[pick[t]]); s += items[pick[t]]; }
+      res.overflow += s - targets[lv];
+      res.groups.push({ level: lv, target: targets[lv], items: buf.concat(vals), sum: s, overflow: s - targets[lv] });
+      cur = 0; buf = []; lv++;
+    }
+    for (var i = 0; i < items.length; i++) if (!used[i]) { buf.push(items[i]); cur += items[i]; }
+    res.endLevel = lv;
+    res.carryAfter = cur;
+    res.pending = buf;
+  }
+
+  function minCover(items, used, target) {
+    var avail = [];
+    for (var i = 0; i < items.length; i++) if (!used[i]) avail.push(i);
+    if (!avail.length) return null;
+    var tot = 0, maxV = 0;
+    for (var a = 0; a < avail.length; a++) { tot += items[avail[a]]; if (items[avail[a]] > maxV) maxV = items[avail[a]]; }
+    if (tot < target) return null;
+    var cap = Math.min(tot, target + maxV);
+    if (cap > MAX_CAP || Math.floor(cap) !== cap) return greedyCover(items, avail, target);
+
+    var reach = new Uint8Array(cap + 1); reach[0] = 1;
+    var from = new Int32Array(cap + 1).fill(-1);
+    var who = new Int32Array(cap + 1).fill(-1);
+    for (var a2 = 0; a2 < avail.length; a2++) {
+      var v = items[avail[a2]];
+      for (var s = cap; s >= v; s--) {
+        if (reach[s - v] && !reach[s]) { reach[s] = 1; from[s] = s - v; who[s] = avail[a2]; }
+      }
+    }
+    var start = Math.ceil(target);
+    for (var s2 = start; s2 <= cap; s2++) {
+      if (reach[s2]) {
+        var out = [], cs = s2;
+        while (cs > 0) { out.push(who[cs]); cs = from[cs]; }
+        return out;
+      }
+    }
+    return null;
+  }
+
+  function greedyCover(items, avail, target) {
+    var idx = avail.slice().sort(function (a, b) { return items[b] - items[a]; });
+    var out = [], s = 0;
+    for (var i = 0; i < idx.length; i++) { out.push(idx[i]); s += items[idx[i]]; if (s >= target) return out; }
+    return null;
+  }
+
+  return { solveWave: solveWave };
+})();
+/*<SOLVER_END>*/
+
+/* ============================ App ============================ */
+(function () {
+  'use strict';
+  var LS = 'score-planner-v1';
+
+  /* 内置关卡场景预设（依次通关的目标分） */
+  var PRESETS = [
+    { name: '汉堡叠叠乐', targets: [30, 50, 70, 60, 80, 60, 90, 110, 70, 90, 110, 80, 100, 130, 150] },
+    { name: '小鹅拳击手', targets: [50, 50, 60, 60, 80, 80, 80, 100, 100, 120, 150, 150, 180, 180, 200] },
+    { name: '金牌外卖员', targets: [20, 25, 35, 25, 35, 45, 25, 35, 45, 55] }
+  ];
+
+  var DEFAULTS = { targets: PRESETS[0].targets.slice(), level: 0, carry: 0, totalOverflow: 0, history: [], wave: [] };
+  var S = load();
+  var lastResult = null;
+
+  function $(id) { return document.getElementById(id); }
+  function load() {
+    try {
+      var raw = localStorage.getItem(LS);
+      if (raw) { var o = JSON.parse(raw); if (o && o.targets && o.targets.length) return o; }
+    } catch (e) {}
+    return JSON.parse(JSON.stringify(DEFAULTS));
+  }
+  function save() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
+  function fmt(x) { return (Math.round(x * 1000) / 1000).toString(); }
+  function clearResult() { lastResult = null; $('resultBox').innerHTML = ''; $('btnApply').disabled = true; }
+
+  /* ---------- 场景预设 ---------- */
+  function sameTargets(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (Number(a[i]) !== Number(b[i])) return false;
+    return true;
+  }
+  function activePreset() {
+    for (var i = 0; i < PRESETS.length; i++) if (sameTargets(S.targets, PRESETS[i].targets)) return PRESETS[i];
+    return null;
+  }
+  function renderPresets() {
+    var cur = activePreset(), box = $('presetRow');
+    box.innerHTML = '';
+    PRESETS.forEach(function (p) {
+      var b = document.createElement('button');
+      b.className = 'pbtn' + (cur === p ? ' on' : '');
+      b.innerHTML = p.name + '<span class="c">' + p.targets.length + '关</span>';
+      b.addEventListener('click', function () { usePreset(p); });
+      box.appendChild(b);
+    });
+    if (!cur) {
+      var s = document.createElement('span');
+      s.className = 'pbtn on';
+      s.textContent = '自定义';
+      box.appendChild(s);
+    }
+  }
+  function usePreset(p) {
+    if (sameTargets(S.targets, p.targets)) return;
+    if ((S.level > 0 || S.carry > 0 || S.history.length) &&
+        !confirm('切换到「' + p.name + '」会把关卡表替换成该场景，并重置当前进度，继续？')) return;
+    S.targets = p.targets.slice();
+    S.level = 0; S.carry = 0; S.totalOverflow = 0; S.history = [];
+    clearResult(); save(); render();
+  }
+
+  /* ---------- 起始进度 ---------- */
+  function syncStartInputs() {
+    var n = S.targets.length, lvEl = $('inStartLv'), cEl = $('inStartCarry');
+    lvEl.max = n;
+    if (document.activeElement !== lvEl) lvEl.value = Math.min(S.level + 1, n);
+    if (document.activeElement !== cEl) cEl.value = S.carry;
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render() {
+    var t = S.targets, n = t.length, lv = Math.min(S.level, n);
+    var done = lv >= n;
+    var target = done ? null : t[lv];
+    $('lvTag').textContent = done ? '已全部通关' : ('第 ' + (lv + 1) + ' / ' + n + ' 关');
+    $('stLv').textContent = done ? '通关' : (lv + 1);
+    $('stTarget').textContent = done ? '—' : fmt(target);
+    $('stCarry').textContent = fmt(S.carry);
+    $('stNeed').textContent = done ? '—' : fmt(Math.max(0, target - S.carry));
+    $('stOv').textContent = fmt(S.totalOverflow);
+    $('stHint').textContent = done
+      ? '全部关卡已完成，剩余分数不再计入溢出。'
+      : '本关还差 ' + fmt(Math.max(0, target - S.carry)) + ' 分。';
+    $('btnUndo').disabled = S.history.length === 0;
+
+    // 关卡网格
+    var g = $('lvGrid'); g.innerHTML = '';
+    for (var i = 0; i < n; i++) {
+      var d = document.createElement('div');
+      d.className = 'lv' + (i < lv ? ' done' : '') + (i === lv ? ' cur' : '');
+      d.innerHTML = '<div class="n">第 ' + (i + 1) + ' 关</div>';
+      var inp = document.createElement('input');
+      inp.type = 'number'; inp.inputMode = 'numeric'; inp.value = t[i];
+      inp.dataset.i = i;
+      inp.addEventListener('change', onTargetChange);
+      d.appendChild(inp);
+      g.appendChild(d);
+    }
+    $('lvCount').textContent = n + ' 关';
+    $('lvNum').value = n;
+    renderPresets();
+    syncStartInputs();
+
+    // 本波
+    renderWave();
+    // 历史
+    $('histN').textContent = S.history.length;
+    var hb = $('histBox');
+    if (!S.history.length) hb.innerHTML = '<div style="color:var(--dim2)">暂无记录</div>';
+    else hb.innerHTML = S.history.slice().reverse().map(function (h) {
+      return '<div class="h"><span>第 ' + (h.waveNo) + ' 波 · 通关 ' + h.cleared + ' 关</span>' +
+             '<span class="mono">溢出 ' + fmt(h.overflow) + '</span></div>';
+    }).join('');
+  }
+
+  function renderWave() {
+    var c = $('waveChips'); c.innerHTML = '';
+    S.wave.forEach(function (v, i) {
+      var d = document.createElement('div');
+      d.className = 'chip clickable';
+      d.innerHTML = '<b>' + fmt(v) + '</b><span class="x">×</span>';
+      d.title = '点击删除';
+      d.addEventListener('click', function () { S.wave.splice(i, 1); save(); renderWave(); });
+      c.appendChild(d);
+    });
+    $('waveTag').textContent = S.wave.length + ' 个 · 合计 ' + fmt(S.wave.reduce(function (a, b) { return a + b; }, 0));
+  }
+
+  function onTargetChange(e) {
+    var i = +e.target.dataset.i;
+    var v = Number(e.target.value);
+    if (!isFinite(v) || v <= 0) { e.target.value = S.targets[i]; return; }
+    S.targets[i] = v; save(); render();
+  }
+
+  /* ---------- 交互 ---------- */
+  function parseNums(str) {
+    return (str || '').split(/[^0-9.\-]+/).map(Number).filter(function (v) { return isFinite(v) && v > 0; });
+  }
+
+  $('btnAddWave').addEventListener('click', addWave);
+  $('waveInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addWave(); } });
+  function addWave() {
+    var el = $('waveInput');
+    var vals = parseNums(el.value);
+    if (!vals.length) return;
+    S.wave = S.wave.concat(vals);
+    el.value = ''; el.focus();
+    save(); renderWave();
+  }
+  $('btnClearWave').addEventListener('click', function () { S.wave = []; save(); renderWave(); });
+  $('btnDemoWave').addEventListener('click', function () { S.wave = [37, 12, 88, 45, 60, 23, 9, 71, 54, 30]; save(); renderWave(); });
+
+  $('btnApplyNum').addEventListener('click', function () {
+    var n = Math.max(1, Math.min(30, Math.round(Number($('lvNum').value) || 12)));
+    var t = S.targets.slice(0, n);
+    while (t.length < n) {
+      var last = t.length ? t[t.length - 1] : 100;
+      t.push(Math.round(last * 1.15 / 10) * 10 || 100);
+    }
+    S.targets = t; save(); render();
+  });
+  $('btnPasteLv').addEventListener('click', function () {
+    var cur = S.targets.join(' ');
+    var s = prompt('粘贴关卡目标分（空格 / 逗号 / 换行分隔）：', cur);
+    if (s === null) return;
+    var vals = parseNums(s);
+    if (!vals.length) { alert('没有解析到有效分数'); return; }
+    S.targets = vals; save(); render();
+  });
+
+  $('btnReset').addEventListener('click', function () {
+    if (!confirm('重置进度？关卡目标分保留，进度回到第 1 关 0 分，溢出 / 历史清空。')) return;
+    S.level = 0; S.carry = 0; S.totalOverflow = 0; S.history = []; S.wave = [];
+    clearResult(); save(); render();
+  });
+  $('btnUndo').addEventListener('click', function () {
+    var h = S.history.pop();
+    if (!h) return;
+    S.level = h.fromLevel; S.carry = h.fromCarry; S.totalOverflow -= h.overflow;
+    if (S.totalOverflow < 0) S.totalOverflow = 0;
+    clearResult(); save(); render();
+  });
+
+  $('btnApplyStart').addEventListener('click', function () {
+    var n = S.targets.length;
+    var lv = Math.round(Number($('inStartLv').value));
+    var c = Number($('inStartCarry').value);
+    if (!isFinite(lv) || lv < 1 || lv > n) { alert('起始关卡需要在 1 ~ ' + n + ' 之间'); return; }
+    if (!isFinite(c) || c < 0) { alert('已完成分数不能为负数'); return; }
+    if (c >= S.targets[lv - 1]) {
+      alert('第 ' + lv + ' 关目标是 ' + fmt(S.targets[lv - 1]) + ' 分，已完成分数必须小于目标分（否则该关已经通关，应填下一关）。');
+      return;
+    }
+    S.level = lv - 1;
+    S.carry = c;
+    S.totalOverflow = 0;
+    S.history = [];
+    clearResult(); save(); render();
+  });
+
+  $('btnSolve').addEventListener('click', function () {
+    if (!S.wave.length) { alert('请先输入本波分数'); return; }
+    if (S.level >= S.targets.length) { alert('所有关卡已通关'); return; }
+    var r = ScoreSolver.solveWave(S.targets, S.level, S.carry, S.wave);
+    lastResult = r;
+    renderResult(r);
+    $('btnApply').disabled = false;
+    $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  $('btnApply').addEventListener('click', function () {
+    if (!lastResult) return;
+    var r = lastResult;
+    S.history.push({
+      waveNo: S.history.length + 1,
+      fromLevel: r.startLevel, fromCarry: S.carry,
+      toLevel: r.endLevel, overflow: r.overflow, cleared: r.groups.length
+    });
+    S.level = r.endLevel; S.carry = r.carryAfter;
+    S.totalOverflow += r.overflow; S.wave = [];
+    clearResult(); save();
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  function renderResult(r) {
+    var html = '<div class="card"><h2>最优方案 <span class="tag">' +
+      (r.exact ? '精确解' : '近似解（分数过多）') + '</span></h2>';
+    html += '<div class="stat">' +
+      '<div class="s"><div class="k">本波通关</div><div class="v mono">' + r.groups.length + ' 关</div></div>' +
+      '<div class="s"><div class="k">本波溢出</div><div class="v mono o' + ovCls(r.overflow) + '">' + fmt(r.overflow) + '</div></div>' +
+      '<div class="s"><div class="k">剩余进度</div><div class="v mono">' + fmt(r.carryAfter) + '</div></div>' +
+      '</div>';
+
+    html += '<div class="plan">';
+    if (!r.groups.length) {
+      html += '<div class="pr"><span class="l">无通关</span><span class="e" style="color:var(--dim)">本波分数不足以通关，全部转为当前关进度</span></div>';
+    } else {
+      r.groups.forEach(function (g) {
+        html += '<div class="pr">' +
+          '<span class="l">第 ' + (g.level + 1) + ' 关<br><span style="color:var(--dim2);font-size:11.5px">目标 ' + fmt(g.target) + '</span></span>' +
+          '<span class="e">' + g.items.map(fmt).join(' + ') + ' = <b>' + fmt(g.sum) + '</b></span>' +
+          '<span class="o o' + ovCls(g.overflow) + '">溢出 ' + fmt(g.overflow) + '</span>' +
+          '</div>';
+      });
+    }
+    if (r.pending && r.pending.length) {
+      var lvTxt = r.endLevel < S.targets.length ? ('第 ' + (r.endLevel + 1) + ' 关') : '（已通关）';
+      html += '<div class="pr"><span class="l">转入 ' + lvTxt + '</span>' +
+        '<span class="e">' + r.pending.map(fmt).join(' + ') + ' = <b>' + fmt(r.carryAfter) + '</b> <span style="color:var(--dim2)">（计入进度，不算溢出）</span></span>' +
+        '<span class="o o0">溢出 0</span></div>';
+    }
+    if (r.wasted > 0) {
+      html += '<div class="pr"><span class="l">无法使用</span><span class="e" style="color:var(--dim)">' + fmt(r.wasted) + ' 分已超出所有关卡</span><span class="o o2">浪费</span></div>';
+    }
+    html += '</div>';
+
+    if (r.exact) {
+      html += '<div class="okbox">已穷举全部组合，这是总溢出最小的分配方式。</div>';
+    } else {
+      html += '<div class="warnbox">本波分数超过 18 个，已用近似算法（逐关最小覆盖），结果可能不是全局最优。</div>';
+    }
+    html += '<div class="hint">「剩余进度」会带到下一关继续累计，不计入溢出；只有通关时超出目标分的部分才算溢出。</div>';
+    html += '</div>';
+    $('resultBox').innerHTML = html;
+  }
+
+  function ovCls(v) { return v <= 0 ? '0' : (v <= 20 ? '1' : '2'); }
+
+  render();
+
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

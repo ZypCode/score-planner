@@ -1,0 +1,20 @@
+{
+  "name": "分数最优推进",
+  "short_name": "分数推进",
+  "description": "依次通关、一波分数全部用完、总溢出最小的最优推进计算器",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
