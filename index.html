@@ -215,6 +215,12 @@ details summary{cursor:pointer;color:var(--dim);font-size:13px;outline:none}
         <button type="button" class="sm" id="btnCloudLogout">退出</button>
       </div>
       <p class="meta" id="cloudAuthLine" style="margin-top:8px"></p>
+      <p class="meta mono" id="cloudSyncMeta" style="margin-top:6px;line-height:1.6">—</p>
+      <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:8px">
+        <button type="button" class="sm" id="btnCloudPull" disabled>从云端拉取</button>
+        <button type="button" class="sm" id="btnCloudPush" disabled>上传到云端</button>
+      </div>
+      <p class="hint" style="margin-top:6px;margin-bottom:0;font-size:12px">其它设备改过后点「拉取」；本机改过后点「上传」。自动保存仍会延迟上传。</p>
     </details>
   </div>
 
@@ -431,9 +437,13 @@ var ScoreSolver = (function () {
   var LS = 'score-planner-v2';
   var LS_V1 = 'score-planner-v1';
   var SYNC_PROJECT_ID = 'score-planner';
+  var CLOUD_META_LS = 'score-planner-cloud-meta-v1';
   var cloudPushTimer = null;
   var cloudSyncing = false;
   var cloudRemoteAt = 0;
+  var cloudLastPullAt = 0;
+  var cloudLastPushAt = 0;
+  var lastLocalSaveAt = 0;
 
   /* 内置关卡场景预设（依次通关的目标分） */
   var PRESETS = [
@@ -469,6 +479,33 @@ var ScoreSolver = (function () {
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
+  function fmtTs(ts) {
+    if (!ts) return '—';
+    return fmtTime(new Date(ts).toISOString()) + ':' + (function (s) { return s < 10 ? '0' + s : '' + s; })(new Date(ts).getSeconds());
+  }
+  function loadCloudMeta() {
+    try {
+      var raw = localStorage.getItem(CLOUD_META_LS);
+      if (raw) {
+        var m = JSON.parse(raw);
+        if (m) {
+          cloudRemoteAt = Number(m.remoteUpdatedAt) || 0;
+          cloudLastPullAt = Number(m.lastPullAt) || 0;
+          cloudLastPushAt = Number(m.lastPushAt) || 0;
+        }
+      }
+    } catch (e) {}
+  }
+  function persistCloudMeta() {
+    try {
+      localStorage.setItem(CLOUD_META_LS, JSON.stringify({
+        remoteUpdatedAt: cloudRemoteAt,
+        lastPullAt: cloudLastPullAt,
+        lastPushAt: cloudLastPushAt
+      }));
+    } catch (e) {}
+  }
+  loadCloudMeta();
   function loadStore() {
     try {
       var raw = localStorage.getItem(LS);
@@ -513,13 +550,31 @@ var ScoreSolver = (function () {
     clearTimeout(cloudPushTimer);
     cloudPushTimer = setTimeout(function () {
       syncFromS();
-      ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud()).catch(function () {});
+      cloudPushNow().catch(function () {});
     }, 450);
+  }
+  function onCloudPushResult(res) {
+    if (res && res.updatedAt) {
+      cloudRemoteAt = res.updatedAt;
+      cloudLastPushAt = res.updatedAt;
+    } else {
+      cloudLastPushAt = Date.now();
+    }
+    persistCloudMeta();
+    refreshCloudSyncMeta();
+    return res;
+  }
+  function onCloudPullResult(res) {
+    cloudLastPullAt = Date.now();
+    if (res && res.updatedAt) cloudRemoteAt = res.updatedAt;
+    persistCloudMeta();
+    refreshCloudSyncMeta();
+    return res;
   }
   function cloudPushNow() {
     if (!ZypSync.isLoggedIn()) return Promise.resolve();
     syncFromS();
-    return ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud());
+    return ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud()).then(onCloudPushResult);
   }
   function workingState() {
     if (store.active && store.active.state) return Object.assign(store.active.state, {
@@ -540,6 +595,8 @@ var ScoreSolver = (function () {
   function save() {
     syncFromS();
     try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    lastLocalSaveAt = Date.now();
+    refreshCloudSyncMeta();
     scheduleCloudPush();
   }
   function hasActive() { return !!(store.active && store.active.state); }
@@ -663,9 +720,14 @@ var ScoreSolver = (function () {
       var st = a.state;
       var prog = '第 ' + Math.min(st.level + 1, st.targets.length) + ' / ' + st.targets.length + ' 关 · 本局 ' + (st.history.length || 0) + ' 波 · 溢出 ' + fmt(st.totalOverflow);
       box.className = 'session live';
-      var cloudHtml = ZypSync.isLoggedIn()
-        ? '<p class="meta" style="margin-top:6px">☁ 已登录 · ' + (ZypSync.getUsername() || '云端') + ' · 自动同步</p>'
-        : '';
+      var cloudHtml = '';
+      if (ZypSync.isLoggedIn()) {
+        var syncHint = cloudRemoteAt
+          ? '云端 ' + fmtTs(cloudRemoteAt)
+          : '云端暂无存档';
+        if (lastLocalSaveAt > cloudLastPushAt + 1000) syncHint += ' · 本机有未上传改动';
+        cloudHtml = '<p class="meta" style="margin-top:6px">☁ ' + (ZypSync.getUsername() || '已登录') + ' · ' + syncHint + '</p>';
+      }
       box.innerHTML =
         '<p class="title">对局进行中 · ' + a.title + '</p>' +
         '<p class="meta">开始 ' + fmtTime(a.startedAt) + '<br>' + prog + '</p>' +
@@ -936,18 +998,95 @@ var ScoreSolver = (function () {
     } else {
       el.textContent = '已配置 API，请登录或注册后启用云端同步。';
     }
+    refreshCloudSyncMeta();
+  }
+
+  function setCloudButtonsEnabled(on) {
+    var pull = $('btnCloudPull');
+    var push = $('btnCloudPush');
+    if (pull) pull.disabled = !on;
+    if (push) push.disabled = !on;
+  }
+
+  function refreshCloudSyncMeta() {
+    var el = $('cloudSyncMeta');
+    if (!el) return;
+    if (!ZypSync.isLoggedIn()) {
+      el.textContent = '登录后显示云端同步时间。';
+      setCloudButtonsEnabled(false);
+      return;
+    }
+    setCloudButtonsEnabled(!cloudSyncing);
+    var lines = [
+      '云端存档：' + (cloudRemoteAt ? fmtTs(cloudRemoteAt) : '—'),
+      '上次上传：' + (cloudLastPushAt ? fmtTs(cloudLastPushAt) : '—'),
+      '上次拉取：' + (cloudLastPullAt ? fmtTs(cloudLastPullAt) : '—')
+    ];
+    if (lastLocalSaveAt > cloudLastPushAt + 1000) {
+      lines.push('状态：本机有更新，尚未确认上传完成');
+    } else if (cloudRemoteAt && cloudLastPullAt >= cloudLastPushAt) {
+      lines.push('状态：已拉取过云端（较新参照云端存档时间）');
+    } else if (cloudLastPushAt >= cloudRemoteAt) {
+      lines.push('状态：本机已上传（参照上传时间）');
+    }
+    el.innerHTML = lines.join('<br>');
   }
 
   function pullCloudAndMerge() {
     return ZypSync.pull(SYNC_PROJECT_ID).then(function (res) {
+      onCloudPullResult(res);
       if (res && res.data) {
         applyRemoteStore(res.data);
         S = workingState();
         try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
         render();
+      } else {
+        refreshCloudSyncMeta();
       }
       return res;
     });
+  }
+
+  function manualCloudPull() {
+    if (!ZypSync.isLoggedIn()) { alert('请先登录'); return Promise.resolve(); }
+    if (cloudSyncing) return Promise.resolve();
+    cloudSyncing = true;
+    refreshCloudSyncMeta();
+    $('cloudStatus').textContent = '拉取中…';
+    return pullCloudAndMerge()
+      .then(function () {
+        $('cloudStatus').textContent = '已从云端更新';
+        $('cloudStatus').className = 'cloud-ok';
+      })
+      .catch(function (e) {
+        $('cloudStatus').textContent = '拉取失败：' + (e.message || e);
+        $('cloudStatus').className = 'cloud-warn';
+      })
+      .finally(function () {
+        cloudSyncing = false;
+        refreshCloudSyncMeta();
+      });
+  }
+
+  function manualCloudPush() {
+    if (!ZypSync.isLoggedIn()) { alert('请先登录'); return Promise.resolve(); }
+    if (cloudSyncing) return Promise.resolve();
+    cloudSyncing = true;
+    refreshCloudSyncMeta();
+    $('cloudStatus').textContent = '上传中…';
+    return cloudPushNow()
+      .then(function () {
+        $('cloudStatus').textContent = '已上传到云端';
+        $('cloudStatus').className = 'cloud-ok';
+      })
+      .catch(function (e) {
+        $('cloudStatus').textContent = '上传失败：' + (e.message || e);
+        $('cloudStatus').className = 'cloud-warn';
+      })
+      .finally(function () {
+        cloudSyncing = false;
+        refreshCloudSyncMeta();
+      });
   }
 
   function initCloudUi() {
@@ -1026,6 +1165,9 @@ var ScoreSolver = (function () {
       refreshCloudAuthLine();
       render();
     });
+
+    $('btnCloudPull').addEventListener('click', function () { manualCloudPull(); });
+    $('btnCloudPush').addEventListener('click', function () { manualCloudPush(); });
   }
 
   function boot() {
@@ -1038,8 +1180,8 @@ var ScoreSolver = (function () {
       box.innerHTML = '<p class="meta">正在同步云端存档…</p>';
       ZypSync.pull(SYNC_PROJECT_ID)
         .then(function (res) {
+          onCloudPullResult(res || {});
           if (res && res.data) {
-            cloudRemoteAt = res.updatedAt || 0;
             applyRemoteStore(res.data);
           }
           S = workingState();
@@ -1049,6 +1191,7 @@ var ScoreSolver = (function () {
         })
         .catch(function (e) {
           cloudSyncing = false;
+          refreshCloudSyncMeta();
           console.warn('sync pull', e);
           render();
         });
