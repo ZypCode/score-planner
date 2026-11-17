@@ -444,6 +444,8 @@ var ScoreSolver = (function () {
   var cloudLastPullAt = 0;
   var cloudLastPushAt = 0;
   var lastLocalSaveAt = 0;
+  var cloudLastServerUserId = '';
+  var cloudLastArchiveCount = -1;
 
   /* 内置关卡场景预设（依次通关的目标分） */
   var PRESETS = [
@@ -492,6 +494,8 @@ var ScoreSolver = (function () {
           cloudRemoteAt = Number(m.remoteUpdatedAt) || 0;
           cloudLastPullAt = Number(m.lastPullAt) || 0;
           cloudLastPushAt = Number(m.lastPushAt) || 0;
+          cloudLastServerUserId = m.serverUserId || '';
+          cloudLastArchiveCount = typeof m.lastArchiveCount === 'number' ? m.lastArchiveCount : -1;
         }
       }
     } catch (e) {}
@@ -501,7 +505,9 @@ var ScoreSolver = (function () {
       localStorage.setItem(CLOUD_META_LS, JSON.stringify({
         remoteUpdatedAt: cloudRemoteAt,
         lastPullAt: cloudLastPullAt,
-        lastPushAt: cloudLastPushAt
+        lastPushAt: cloudLastPushAt,
+        serverUserId: cloudLastServerUserId,
+        lastArchiveCount: cloudLastArchiveCount
       }));
     } catch (e) {}
   }
@@ -553,22 +559,32 @@ var ScoreSolver = (function () {
       cloudPushNow().catch(function () {});
     }, 450);
   }
-  function onCloudPushResult(res) {
-    if (res && res.updatedAt) {
+  function archiveCountFromRemote(data) {
+    if (!data || !Array.isArray(data.archives)) return 0;
+    return data.archives.length;
+  }
+  function applySyncResponseMeta(res, kind) {
+    if (!res) return;
+    if (res.userId) cloudLastServerUserId = res.userId;
+    if (res.updatedAt) {
       cloudRemoteAt = res.updatedAt;
-      cloudLastPushAt = res.updatedAt;
-    } else {
-      cloudLastPushAt = Date.now();
+      if (kind === 'push') cloudLastPushAt = res.updatedAt;
+    } else if (kind === 'pull') {
+      cloudRemoteAt = 0;
     }
+    if (kind === 'pull') cloudLastPullAt = Date.now();
+    else if (kind === 'push' && !res.updatedAt) cloudLastPushAt = Date.now();
+    if (res.data) cloudLastArchiveCount = archiveCountFromRemote(res.data);
+    else if (kind === 'pull' && !res.updatedAt) cloudLastArchiveCount = 0;
     persistCloudMeta();
     refreshCloudSyncMeta();
+  }
+  function onCloudPushResult(res) {
+    applySyncResponseMeta(res, 'push');
     return res;
   }
   function onCloudPullResult(res) {
-    cloudLastPullAt = Date.now();
-    if (res && res.updatedAt) cloudRemoteAt = res.updatedAt;
-    persistCloudMeta();
-    refreshCloudSyncMeta();
+    applySyncResponseMeta(res, 'pull');
     return res;
   }
   function cloudPushNow() {
@@ -1018,7 +1034,9 @@ var ScoreSolver = (function () {
     }
     setCloudButtonsEnabled(!cloudSyncing);
     var lines = [
-      '云端存档：' + (cloudRemoteAt ? fmtTs(cloudRemoteAt) : '—'),
+      '云端账号：' + (cloudLastServerUserId || ZypSync.getUsername() || '—'),
+      '云端存档：' + (cloudRemoteAt ? fmtTs(cloudRemoteAt) : '（该账号暂无云端存档）'),
+      '云端归档场数：' + (cloudLastArchiveCount >= 0 ? String(cloudLastArchiveCount) : '—'),
       '上次上传：' + (cloudLastPushAt ? fmtTs(cloudLastPushAt) : '—'),
       '上次拉取：' + (cloudLastPullAt ? fmtTs(cloudLastPullAt) : '—')
     ];
@@ -1054,9 +1072,16 @@ var ScoreSolver = (function () {
     refreshCloudSyncMeta();
     $('cloudStatus').textContent = '拉取中…';
     return pullCloudAndMerge()
-      .then(function () {
-        $('cloudStatus').textContent = '已从云端更新';
-        $('cloudStatus').className = 'cloud-ok';
+      .then(function (res) {
+        var uid = (res && res.userId) || cloudLastServerUserId || ZypSync.getUsername();
+        var n = cloudLastArchiveCount >= 0 ? cloudLastArchiveCount : archiveCountFromRemote(res && res.data);
+        if (!res || !res.updatedAt) {
+          $('cloudStatus').textContent = '已连接云端，但账号「' + uid + '」下暂无存档（与手机账号是否一致？）';
+          $('cloudStatus').className = 'cloud-warn';
+        } else {
+          $('cloudStatus').textContent = '已拉取 · 账号「' + uid + '」· 云端 ' + fmtTs(res.updatedAt) + ' · 归档 ' + n + ' 场';
+          $('cloudStatus').className = 'cloud-ok';
+        }
       })
       .catch(function (e) {
         $('cloudStatus').textContent = '拉取失败：' + (e.message || e);
@@ -1075,9 +1100,16 @@ var ScoreSolver = (function () {
     refreshCloudSyncMeta();
     $('cloudStatus').textContent = '上传中…';
     return cloudPushNow()
-      .then(function () {
-        $('cloudStatus').textContent = '已上传到云端';
+      .then(function (res) {
+        var uid = (res && res.userId) || ZypSync.getUsername();
+        var n = archiveCountFromRemote(packStoreForCloud());
+        var at = res && res.updatedAt;
+        $('cloudStatus').textContent = at
+          ? ('已上传 · 账号「' + uid + '」· 云端 ' + fmtTs(at) + ' · 归档 ' + n + ' 场')
+          : '已上传（未拿到云端时间）';
         $('cloudStatus').className = 'cloud-ok';
+        cloudLastArchiveCount = n;
+        refreshCloudSyncMeta();
       })
       .catch(function (e) {
         $('cloudStatus').textContent = '上传失败：' + (e.message || e);

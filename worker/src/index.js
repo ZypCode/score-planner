@@ -204,10 +204,17 @@ export default {
 
       if (request.method === 'GET') {
         const raw = await env.SESSIONS.get(key);
-        if (!raw) return json({ projectId, data: null, updatedAt: null }, 200, origin);
+        if (!raw) {
+          return json({ projectId, data: null, updatedAt: null, userId: session.userId }, 200, origin);
+        }
         try {
           const doc = JSON.parse(raw);
-          return json({ projectId, data: doc.data ?? null, updatedAt: doc.updatedAt ?? null }, 200, origin);
+          return json({
+            projectId,
+            data: doc.data ?? null,
+            updatedAt: doc.updatedAt ?? null,
+            userId: session.userId,
+          }, 200, origin);
         } catch {
           return json({ error: 'corrupt' }, 500, origin);
         }
@@ -225,7 +232,7 @@ export default {
         const updatedAt = Date.now();
         const doc = { data: body.data ?? null, updatedAt };
         await env.SESSIONS.put(key, JSON.stringify(doc), { expirationTtl: DATA_TTL_SEC });
-        return json({ projectId, updatedAt }, 200, origin);
+        return json({ projectId, updatedAt, userId: session.userId }, 200, origin);
       }
     }
 
