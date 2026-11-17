@@ -589,7 +589,10 @@ var ScoreSolver = (function () {
   }
   function cloudPushNow() {
     if (!ZypSync.isLoggedIn()) return Promise.resolve();
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = null;
     syncFromS();
+    try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
     return ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud()).then(onCloudPushResult);
   }
   function workingState() {
@@ -1067,7 +1070,11 @@ var ScoreSolver = (function () {
 
   function manualCloudPull() {
     if (!ZypSync.isLoggedIn()) { alert('请先登录'); return Promise.resolve(); }
-    if (cloudSyncing) return Promise.resolve();
+    if (cloudSyncing) {
+      $('cloudStatus').textContent = '同步进行中，请稍候再拉取';
+      $('cloudStatus').className = 'cloud-warn';
+      return Promise.resolve();
+    }
     cloudSyncing = true;
     refreshCloudSyncMeta();
     $('cloudStatus').textContent = '拉取中…';

@@ -33,6 +33,7 @@ function json(data, status, origin) {
     status: status || 200,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'private, no-store, must-revalidate',
       ...corsHeaders(origin),
     },
   });
