@@ -446,6 +446,8 @@ var ScoreSolver = (function () {
   var lastLocalSaveAt = 0;
   var cloudLastServerUserId = '';
   var cloudLastArchiveCount = -1;
+  var syncRev = 0;
+  var lastPushRev = 0;
 
   /* 内置关卡场景预设（依次通关的目标分） */
   var PRESETS = [
@@ -496,6 +498,8 @@ var ScoreSolver = (function () {
           cloudLastPushAt = Number(m.lastPushAt) || 0;
           cloudLastServerUserId = m.serverUserId || '';
           cloudLastArchiveCount = typeof m.lastArchiveCount === 'number' ? m.lastArchiveCount : -1;
+          syncRev = Number(m.syncRev) || 0;
+          lastPushRev = Number(m.lastPushRev) || 0;
         }
       }
     } catch (e) {}
@@ -507,7 +511,9 @@ var ScoreSolver = (function () {
         lastPullAt: cloudLastPullAt,
         lastPushAt: cloudLastPushAt,
         serverUserId: cloudLastServerUserId,
-        lastArchiveCount: cloudLastArchiveCount
+        lastArchiveCount: cloudLastArchiveCount,
+        syncRev: syncRev,
+        lastPushRev: lastPushRev
       }));
     } catch (e) {}
   }
@@ -541,6 +547,32 @@ var ScoreSolver = (function () {
   function packStoreForCloud() {
     return { draft: store.draft, active: store.active, archives: store.archives };
   }
+  function bumpSyncRev() {
+    syncRev = (syncRev | 0) + 1;
+    persistCloudMeta();
+  }
+  function buildCloudPayload() {
+    syncFromS();
+    try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    var payload = JSON.parse(JSON.stringify(packStoreForCloud()));
+    payload._syncRev = syncRev;
+    return payload;
+  }
+  function remoteSyncRev(remote) {
+    return remote && remote._syncRev ? (remote._syncRev | 0) : 0;
+  }
+  function shouldApplyRemote(remote) {
+    if (!remote) return false;
+    var r = remoteSyncRev(remote);
+    if (lastPushRev > 0 && r > 0 && r < lastPushRev) return false;
+    if (syncRev > 0 && r > 0 && r < syncRev) return false;
+    return true;
+  }
+  function payloadsMatch(a, b) {
+    if (!a || !b) return false;
+    return archiveCountFromRemote(a) === archiveCountFromRemote(b) &&
+      remoteSyncRev(a) === remoteSyncRev(b);
+  }
   function applyRemoteStore(remote) {
     if (!remote || typeof remote !== 'object') return;
     if (!remote.draft || !remote.draft.targets || !remote.draft.targets.length) {
@@ -550,6 +582,9 @@ var ScoreSolver = (function () {
     store.draft = remote.draft;
     store.active = remote.active || null;
     store.archives = remote.archives;
+    var r = remoteSyncRev(remote);
+    if (r > syncRev) syncRev = r;
+    persistCloudMeta();
   }
   function scheduleCloudPush() {
     if (!ZypSync.isLoggedIn()) return;
@@ -587,13 +622,28 @@ var ScoreSolver = (function () {
     applySyncResponseMeta(res, 'pull');
     return res;
   }
+  function verifyCloudPush(expected) {
+    return ZypSync.pull(SYNC_PROJECT_ID).then(function (res) {
+      if (!res || !res.data) throw new Error('云端无数据');
+      if (archiveCountFromRemote(res.data) !== archiveCountFromRemote(expected)) {
+        throw new Error('云端归档场数不一致');
+      }
+      var want = remoteSyncRev(expected);
+      var got = remoteSyncRev(res.data);
+      if (want > 0 && got !== want) throw new Error('云端版本不一致');
+      return res;
+    });
+  }
   function cloudPushNow() {
     if (!ZypSync.isLoggedIn()) return Promise.resolve();
     clearTimeout(cloudPushTimer);
     cloudPushTimer = null;
-    syncFromS();
-    try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
-    return ZypSync.push(SYNC_PROJECT_ID, packStoreForCloud()).then(onCloudPushResult);
+    var payload = buildCloudPayload();
+    lastPushRev = payload._syncRev;
+    persistCloudMeta();
+    return ZypSync.push(SYNC_PROJECT_ID, payload).then(onCloudPushResult).then(function (res) {
+      return verifyCloudPush(payload).then(function () { return res; });
+    });
   }
   function workingState() {
     if (store.active && store.active.state) return Object.assign(store.active.state, {
@@ -613,6 +663,7 @@ var ScoreSolver = (function () {
   }
   function save() {
     syncFromS();
+    bumpSyncRev();
     try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
     lastLocalSaveAt = Date.now();
     refreshCloudSyncMeta();
@@ -1039,6 +1090,7 @@ var ScoreSolver = (function () {
     var lines = [
       '云端账号：' + (cloudLastServerUserId || ZypSync.getUsername() || '—'),
       '云端存档：' + (cloudRemoteAt ? fmtTs(cloudRemoteAt) : '（该账号暂无云端存档）'),
+      '本机版本：' + syncRev + (lastPushRev ? ' · 上次上传版本 ' + lastPushRev : ''),
       '云端归档场数：' + (cloudLastArchiveCount >= 0 ? String(cloudLastArchiveCount) : '—'),
       '上次上传：' + (cloudLastPushAt ? fmtTs(cloudLastPushAt) : '—'),
       '上次拉取：' + (cloudLastPullAt ? fmtTs(cloudLastPullAt) : '—')
@@ -1053,15 +1105,20 @@ var ScoreSolver = (function () {
     el.innerHTML = lines.join('<br>');
   }
 
-  function pullCloudAndMerge() {
+  function pullCloudAndMerge(opts) {
+    opts = opts || {};
     return ZypSync.pull(SYNC_PROJECT_ID).then(function (res) {
       onCloudPullResult(res);
-      if (res && res.data) {
+      var stale = res && res.data && !shouldApplyRemote(res.data);
+      if (res && res.data && !stale) {
         applyRemoteStore(res.data);
         S = workingState();
         try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
         render();
       } else {
+        if (stale && !opts.silentStale) {
+          res._staleSkipped = true;
+        }
         refreshCloudSyncMeta();
       }
       return res;
@@ -1082,11 +1139,14 @@ var ScoreSolver = (function () {
       .then(function (res) {
         var uid = (res && res.userId) || cloudLastServerUserId || ZypSync.getUsername();
         var n = cloudLastArchiveCount >= 0 ? cloudLastArchiveCount : archiveCountFromRemote(res && res.data);
-        if (!res || !res.updatedAt) {
+        if (res && res._staleSkipped) {
+          $('cloudStatus').textContent = '云端内容版本低于本机（版本 ' + remoteSyncRev(res.data) + ' < ' + syncRev + '），已保留本机，请重新上传';
+          $('cloudStatus').className = 'cloud-warn';
+        } else if (!res || !res.updatedAt) {
           $('cloudStatus').textContent = '已连接云端，但账号「' + uid + '」下暂无存档（与手机账号是否一致？）';
           $('cloudStatus').className = 'cloud-warn';
         } else {
-          $('cloudStatus').textContent = '已拉取 · 账号「' + uid + '」· 云端 ' + fmtTs(res.updatedAt) + ' · 归档 ' + n + ' 场';
+          $('cloudStatus').textContent = '已拉取 · 账号「' + uid + '」· 云端 ' + fmtTs(res.updatedAt) + ' · 归档 ' + n + ' 场 · 版本 ' + remoteSyncRev(res.data);
           $('cloudStatus').className = 'cloud-ok';
         }
       })
@@ -1106,13 +1166,15 @@ var ScoreSolver = (function () {
     cloudSyncing = true;
     refreshCloudSyncMeta();
     $('cloudStatus').textContent = '上传中…';
+    var pushed = buildCloudPayload();
+    lastPushRev = pushed._syncRev;
     return cloudPushNow()
       .then(function (res) {
         var uid = (res && res.userId) || ZypSync.getUsername();
-        var n = archiveCountFromRemote(packStoreForCloud());
+        var n = archiveCountFromRemote(pushed);
         var at = res && res.updatedAt;
         $('cloudStatus').textContent = at
-          ? ('已上传 · 账号「' + uid + '」· 云端 ' + fmtTs(at) + ' · 归档 ' + n + ' 场')
+          ? ('已上传并校验 · 账号「' + uid + '」· 云端 ' + fmtTs(at) + ' · 归档 ' + n + ' 场 · 版本 ' + pushed._syncRev)
           : '已上传（未拿到云端时间）';
         $('cloudStatus').className = 'cloud-ok';
         cloudLastArchiveCount = n;
